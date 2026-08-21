@@ -7,8 +7,8 @@ use blue_build_recipe::{Recipe, RecipeGetters};
 use blue_build_utils::{
     constants::{
         ARCHIVE_SUFFIX, BB_GENISO_DISPLAY_NAME, BB_GENISO_ENROLLMENT_PASSWORD,
-        BB_GENISO_ISO_NAME, BB_GENISO_SECURE_BOOT_URL, BB_GENISO_WEB_UI, BB_SKIP_VALIDATION,
-        BB_TEMPDIR, JASONN3_INSTALLER_IMAGE,
+        BB_GENISO_INTERACTIVE_SETUP, BB_GENISO_ISO_NAME, BB_GENISO_SECURE_BOOT_URL,
+        BB_GENISO_WEB_UI, BB_SKIP_VALIDATION, BB_TEMPDIR, JASONN3_INSTALLER_IMAGE,
     },
     platform::Platform,
     string_vec, tempdir, tempdir_in,
@@ -95,6 +95,11 @@ pub struct GenerateIsoCommand {
     #[arg(long, env = BB_GENISO_WEB_UI)]
     #[builder(default)]
     web_ui: bool,
+
+    /// Restore installer-time network and user/password setup.
+    #[arg(long, env = BB_GENISO_INTERACTIVE_SETUP)]
+    #[builder(default)]
+    interactive_setup: bool,
 
     /// The location to temporarily store files
     /// while building. If unset, it will use `/tmp`.
@@ -216,6 +221,11 @@ impl GenerateIsoCommand {
         image_out_dir: &Path,
         platform: Platform,
     ) -> Result<()> {
+        let interactive_setup_template_dir = self
+            .interactive_setup
+            .then(|| write_interactive_setup_template(image_out_dir))
+            .transpose()?;
+
         let mut args = string_vec![
             format!("VARIANT={}", self.variant),
             format!("ISO_NAME=build/{iso_name}"),
@@ -230,6 +240,18 @@ impl GenerateIsoCommand {
             output_dir => "/build-container-installer/build",
             "dnf-cache" => "/cache/dnf/",
         ];
+        let interactive_setup_template_host_dir = interactive_setup_template_dir
+            .as_ref()
+            .map(|path| path.display().to_string());
+
+        if let Some(template_dir) = interactive_setup_template_host_dir.as_deref() {
+            args.push(format!(
+                "ADDITIONAL_TEMPLATES={INTERACTIVE_SETUP_TEMPLATE_CONTAINER_PATH}"
+            ));
+            vols.extend(&run_volumes![
+                template_dir => INTERACTIVE_SETUP_TEMPLATE_CONTAINER_DIR,
+            ]);
+        }
 
         match &self.command {
             GenIsoSubcommand::Image { image } => {
@@ -313,5 +335,52 @@ impl GenerateIsoCommand {
             bail!("Failed to create ISO");
         }
         Ok(())
+    }
+}
+
+const INTERACTIVE_SETUP_TEMPLATE_CONTAINER_DIR: &str = "/bluebuild-iso";
+const INTERACTIVE_SETUP_TEMPLATE_CONTAINER_PATH: &str = "/bluebuild-iso/interactive-setup.tmpl";
+const INTERACTIVE_SETUP_TEMPLATE_DIR: &str = ".bluebuild-iso";
+const INTERACTIVE_SETUP_TEMPLATE_FILENAME: &str = "interactive-setup.tmpl";
+const INTERACTIVE_SETUP_TEMPLATE: &str = r#"mkdir etc/anaconda/conf.d
+append etc/anaconda/conf.d/99-bluebuild-interactive-setup.conf "[User Interface]"
+append etc/anaconda/conf.d/99-bluebuild-interactive-setup.conf "hidden_spokes ="
+append etc/anaconda/conf.d/99-bluebuild-interactive-setup.conf "hidden_webui_pages ="
+"#;
+
+fn write_interactive_setup_template(image_out_dir: &Path) -> Result<PathBuf> {
+    let template_dir = image_out_dir.join(INTERACTIVE_SETUP_TEMPLATE_DIR);
+    fs::create_dir_all(&template_dir)
+        .into_diagnostic()
+        .wrap_err("Failed to create the interactive setup template directory")?;
+    fs::write(
+        template_dir.join(INTERACTIVE_SETUP_TEMPLATE_FILENAME),
+        INTERACTIVE_SETUP_TEMPLATE,
+    )
+    .into_diagnostic()
+    .wrap_err("Failed to write the interactive setup template")?;
+
+    Ok(template_dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interactive_setup_template_is_written_in_run_dir() {
+        let image_out_dir = tempdir().expect("temporary image directory should be created");
+        let template_dir = write_interactive_setup_template(image_out_dir.path())
+            .expect("interactive setup template should be written");
+        let template_path = template_dir.join(INTERACTIVE_SETUP_TEMPLATE_FILENAME);
+
+        assert_eq!(
+            template_dir,
+            image_out_dir.path().join(INTERACTIVE_SETUP_TEMPLATE_DIR)
+        );
+        assert_eq!(
+            fs::read_to_string(template_path).expect("template should be readable"),
+            INTERACTIVE_SETUP_TEMPLATE
+        );
     }
 }
