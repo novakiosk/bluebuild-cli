@@ -6,9 +6,9 @@ use std::{
 use blue_build_recipe::{Recipe, RecipeGetters};
 use blue_build_utils::{
     constants::{
-        ARCHIVE_SUFFIX, BB_GENISO_ENROLLMENT_PASSWORD, BB_GENISO_ISO_NAME,
-        BB_GENISO_SECURE_BOOT_URL, BB_GENISO_WEB_UI, BB_SKIP_VALIDATION, BB_TEMPDIR,
-        JASONN3_INSTALLER_IMAGE,
+        ARCHIVE_SUFFIX, BB_GENISO_DISPLAY_NAME, BB_GENISO_ENROLLMENT_PASSWORD,
+        BB_GENISO_ISO_NAME, BB_GENISO_SECURE_BOOT_URL, BB_GENISO_WEB_UI, BB_SKIP_VALIDATION,
+        BB_TEMPDIR, JASONN3_INSTALLER_IMAGE,
     },
     platform::Platform,
     string_vec, tempdir, tempdir_in,
@@ -73,6 +73,18 @@ pub struct GenerateIsoCommand {
     #[arg(long, default_value = "universalblue", env = BB_GENISO_ENROLLMENT_PASSWORD)]
     #[builder(into)]
     enrollment_password: String,
+
+    /// Override the display name used for branding
+    /// in the installer (GRUB menu, Anaconda UI, etc.).
+    ///
+    /// By default, the display name is derived from
+    /// the last segment of the image reference
+    /// (e.g. `ghcr.io/octocat/weird-os` -> `weird-os`).
+    /// Use this flag to set a custom name
+    /// (e.g. `notweird-os`).
+    #[arg(long, env = BB_GENISO_DISPLAY_NAME)]
+    #[builder(into)]
+    display_name: Option<String>,
 
     /// The name of your ISO image file.
     #[arg(long, env = BB_GENISO_ISO_NAME)]
@@ -235,16 +247,27 @@ impl GenerateIsoCommand {
                     let image_repo = image_parts.join("/");
                     (image_repo, image_name.to_string())
                 };
+                let image_tag = image.tag().unwrap_or("latest");
+                let version = format!(
+                    "VERSION={}",
+                    Driver::get_os_version().oci_ref(&image).call()?
+                );
 
-                args.extend([
-                    format!("IMAGE_NAME={image_name}"),
-                    format!("IMAGE_REPO={image_repo}"),
-                    format!("IMAGE_TAG={}", image.tag().unwrap_or("latest")),
-                    format!(
-                        "VERSION={}",
-                        Driver::get_os_version().oci_ref(&image).call()?
-                    ),
-                ]);
+                if let Some(display_name) = &self.display_name {
+                    args.extend([
+                        format!("IMAGE_NAME={display_name}"),
+                        format!("IMAGE_SRC=docker://{image_repo}/{image_name}:{image_tag}"),
+                        format!("IMAGE_TAG={image_tag}"),
+                        version,
+                    ]);
+                } else {
+                    args.extend([
+                        format!("IMAGE_NAME={image_name}"),
+                        format!("IMAGE_REPO={image_repo}"),
+                        format!("IMAGE_TAG={image_tag}"),
+                        version,
+                    ]);
+                }
             }
             GenIsoSubcommand::Recipe {
                 recipe,
@@ -264,6 +287,10 @@ impl GenerateIsoCommand {
                             .call()?,
                     ),
                 ]);
+
+                if let Some(display_name) = &self.display_name {
+                    args.push(format!("IMAGE_NAME={display_name}"));
+                }
                 vols.extend(&run_volumes![
                     image_out_dir => "/img_src/",
                 ]);
