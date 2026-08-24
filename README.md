@@ -1,4 +1,4 @@
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/blue-build/cli/badge)](https://scorecard.dev/viewer/?uri=github.com/blue-build/cli)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/novakiosk/bluebuild-cli/badge)](https://scorecard.dev/viewer/?uri=github.com/novakiosk/bluebuild-cli)
 
 <div align="center">
   <center>
@@ -6,9 +6,9 @@
   </center>
 </div>
 
-# BlueBuild
+# NOVA Kiosk BlueBuild CLI
 
-BlueBuild's command line program that builds Containerfiles and custom images based on your recipe.yml.
+This repository is the [NOVA Kiosk fork](https://github.com/novakiosk/bluebuild-cli) of [BlueBuild's command line program](https://github.com/blue-build/cli), which builds Containerfiles and custom images based on your recipe.yml.
 
 ## Requirements
 
@@ -21,6 +21,8 @@ The `bluebuild` tool takes advantage of newer build features. Specifically bind,
 ## Installation
 
 Every image created with `bluebuild` comes with the CLI installed. If you have not built and booted a `bluebuild` created image, you can follow these instructions to install it.
+
+> The Cargo, Podman/Docker, GitHub install script, and Nix methods below install upstream BlueBuild artifacts. They do not include this fork's ISO features; build this repository from source as shown in [NOVA Kiosk fork ISO features](#nova-kiosk-fork-iso-features) to use them.
 
 ### Cargo
 
@@ -45,7 +47,7 @@ docker run --pull always --rm ghcr.io/blue-build/cli:latest-installer | bash
 ### Github Install Script
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/blue-build/cli/main/install.sh)
+bash <(curl -s https://raw.githubusercontent.com/novakiosk/bluebuild-cli/main/install.sh)
 ```
 
 ### Distrobox
@@ -124,6 +126,20 @@ bluebuild build ./recipes/recipe.yml
 ```
 
 This will template out the file and build with `docker`, `podman`, or `buildah`.
+
+### NOVA Kiosk fork ISO features
+
+This fork adds two `generate-iso` options. They are fork-specific, so use a binary built from this repository; upstream Cargo/container installation commands do not provide them.
+
+- `--display-name <NAME>` (or `BB_GENISO_DISPLAY_NAME`) overrides installer branding in GRUB, Anaconda, and related components without changing the OCI image fetched. Remote-image mode uses `IMAGE_SRC` to keep pulling the original image; recipe mode applies the branding to the local archive.
+- `--interactive-setup` (or `BB_GENISO_INTERACTIVE_SETUP=true`) injects an Anaconda/Lorax runtime override that restores installer-time network and user/password setup for the classic GUI and WebUI.
+
+For example, after building the release binary:
+
+```bash
+cargo build --release
+sudo ./target/release/bluebuild generate-iso --interactive-setup --iso-name novakiosk-os-20260211.iso --display-name novakiosk-os image ghcr.io/novakiosk/os
+```
 
 ### Completions
 
