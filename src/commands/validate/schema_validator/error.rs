@@ -25,7 +25,7 @@ pub enum SchemaValidateBuilderError {
 
     #[error("Failed to process schema from URL {}:\n{}", .0, .1)]
     #[diagnostic()]
-    JsonSchemaBuild(String, jsonschema::ValidationError<'static>),
+    JsonSchemaBuild(String, Box<jsonschema::ValidationError<'static>>),
 }
 
 #[derive(Error, Diagnostic, Debug)]

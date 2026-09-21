@@ -77,7 +77,7 @@ impl SchemaValidator {
                 })
                 .await
                 .expect("Should join blocking thread")
-                .map_err(|e| SchemaValidateBuilderError::JsonSchemaBuild(url.into(), *e))?,
+                .map_err(|e| SchemaValidateBuilderError::JsonSchemaBuild(url.into(), e))?,
             );
 
             Ok(Self {
